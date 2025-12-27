@@ -1,27 +1,22 @@
 import streamlit as st
 import pandas as pd
+from streamlit_drawable_canvas import st_canvas
+from PIL import Image, ImageDraw
 
 st.set_page_config(page_title="Meril Clinical Trial Summary", layout="wide")
 
-# --- Custom Header matching the original PDF ---
+# --- Custom Header ---
 col1, col2 = st.columns([1, 3])
 with col1:
     st.markdown("<h1 style='color: #0066CC; font-size: 60px;'>Meril</h1>", unsafe_allow_html=True)
 with col2:
     st.markdown("<h2 style='text-align: center; margin-top: 20px;'>Clinical Trial Summary</h2>", unsafe_allow_html=True)
 
-
+st.markdown("---")
 
 # --- Procedure & Date ---
 st.header("Procedure & Date")
-
-procedure_manual = st.text_area(
-    "Procedure",
-    height=1,
-    key="procedure_manual",
-    
-)
-
+procedure_manual = st.text_area("Procedure", height=1, key="procedure_manual")
 date = st.text_input("Date (dd-mm-yyyy)", key="date")
 surgeon_name = st.text_input("Surgeon Name", key="surgeon")
 place = st.text_input("Place", key="place")
@@ -54,9 +49,101 @@ distance_bw_ports = st.text_input("Distance b/w Ports", key="dist_ports")
 st.subheader("2. Patient Position")
 patient_position = st.text_area("Patient Position (hidden)", height=120, key="patient_pos", label_visibility="collapsed")
 
+# --- 3. Cart Position - Interactive Grid ---
 st.subheader("3. Cart Position")
 cart_height = st.text_input("Height (Vertical Column)", key="cart_height")
-cart_position_wrt_port = st.text_area("Position w.r.t Port (describe or sketch)", height=300, key="cart_sketch")
+
+st.markdown("**Position w.r.t Port - Interactive Grid**")
+st.markdown("Drag ∪1, ∪2, ∪3 ports • Click inside CART to place points 1-2-3 • Export PNG with camera icon")
+
+CANVAS_SIZE = 700
+GRID_SPACING = 25
+
+# Adjustable CART size
+col_cart1, col_cart2 = st.columns(2)
+CART_WIDTH = col_cart1.slider("CART Width", 100, 500, 260, key="cart_w")
+CART_HEIGHT = col_cart2.slider("CART Height", 100, 400, 180, key="cart_h")
+
+cart_x = (CANVAS_SIZE - CART_WIDTH) // 2
+cart_y = (CANVAS_SIZE - CART_HEIGHT) // 2
+
+# Session state
+if "point_counter" not in st.session_state:
+    st.session_state.point_counter = 1
+if "canvas_key" not in st.session_state:
+    st.session_state.canvas_key = 0
+
+# Background grid
+def generate_grid():
+    img = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), "white")
+    draw = ImageDraw.Draw(img)
+    for i in range(0, CANVAS_SIZE, GRID_SPACING):
+        draw.line((i, 0, i, CANVAS_SIZE), fill="#cfe8ff", width=1)
+        draw.line((0, i, CANVAS_SIZE, i), fill="#cfe8ff", width=1)
+    return img
+
+# Fixed objects
+cart_rect = {
+    "type": "rect",
+    "left": cart_x,
+    "top": cart_y,
+    "width": CART_WIDTH,
+    "height": CART_HEIGHT,
+    "stroke": "black",
+    "strokeWidth": 3,
+    "fill": "rgba(0,0,0,0)",
+    "selectable": False,
+    "evented": False
+}
+
+ports = [
+    {"type": "text", "text": "∪1", "left": 140, "top": 90, "fontSize": 36, "fill": "red", "fontWeight": "bold"},
+    {"type": "text", "text": "∪2", "left": 330, "top": 90, "fontSize": 36, "fill": "red", "fontWeight": "bold"},
+    {"type": "text", "text": "∪3", "left": 520, "top": 90, "fontSize": 36, "fill": "red", "fontWeight": "bold"},
+]
+
+initial_drawing = {"version": "4.4.0", "objects": [cart_rect] + ports}
+
+# Mode
+mode = st.radio("Interaction Mode", ["Move Ports", "Place Numbered Points"], horizontal=True, key="mode_radio")
+
+if st.button("Reset Grid"):
+    st.session_state.point_counter = 1
+    st.session_state.canvas_key += 1
+    st.rerun()
+
+# Canvas
+canvas_result = st_canvas(
+    background_image=generate_grid(),
+    height=CANVAS_SIZE,
+    width=CANVAS_SIZE,
+    drawing_mode="transform" if mode == "Move Ports" else "point",
+    initial_drawing=initial_drawing,
+    update_streamlit=True,
+    key=f"canvas_{st.session_state.canvas_key}"
+)
+
+# Point placement
+if canvas_result.json_data and mode == "Place Numbered Points":
+    objects = canvas_result.json_data.get("objects", [])
+    if objects and objects[-1]["type"] == "circle":
+        x = objects[-1]["left"]
+        y = objects[-1]["top"]
+        if cart_x <= x <= cart_x + CART_WIDTH and cart_y <= y <= cart_y + CART_HEIGHT:
+            label = str(st.session_state.point_counter)
+            objects.pop()
+            objects.append({
+                "type": "text",
+                "text": label,
+                "left": x,
+                "top": y,
+                "fontSize": 28,
+                "fill": "red",
+                "fontWeight": "bold"
+            })
+            st.session_state.point_counter += 1
+            if st.session_state.point_counter > 3:
+                st.session_state.point_counter = 1
 
 st.subheader("4. Arm Position")
 arm_camera = st.text_input("Camera", key="arm_cam")
@@ -70,9 +157,9 @@ intra_suturing = st.text_input("Suturing", key="intra_sut")
 intra_ending = st.text_input("Ending", key="intra_end")
 intra_total_duration = st.text_input("Total Duration", key="intra_total")
 non_robotic_step = st.text_area("Non-robotic Step", height=100, key="non_robotic")
-additional_instruments = st.text_area("Additional advanced (non-robotic) Instruments",height=100,key="add_instru")
+additional_instruments = st.text_area("Additional advanced (non-robotic) Instruments", height=100, key="add_instru")
 
-# --- System Settings (No Serial No.) ---
+# --- System Settings ---
 st.header("System Settings")
 st.subheader("Right Arm Instrument")
 right_arm_df = pd.DataFrame({"Type": ["", "", ""], "Uses": ["", "", ""]})
@@ -114,23 +201,16 @@ surgeon_feedback = st.text_area("Surgeon Feedback (hidden)", height=100, key="su
 st.header("Recommended Actions")
 recommended_actions = st.text_area("Recommended Actions (hidden)", height=100, key="recomm_actions", label_visibility="collapsed")
 
-# --- Generate Printable Text Summary ---
+# --- Generate Text Summary ---
 def generate_summary():
-    # Telescope
     tel_parts = []
     if telescope_0: tel_parts.append("0°")
     if telescope_30: tel_parts.append("30°")
     if telescope_custom.strip(): tel_parts.append(telescope_custom + "mm")
     tel_line = "[x] " + "  [x] ".join(tel_parts) if tel_parts else "[ ] 0°  [ ] 30°  _____ mm"
 
-    # Instrument tables
-    right_lines = ""
-    for _, row in edited_right_arm.iterrows():
-        right_lines += "   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") + "\n"
-
-    left_lines = ""
-    for _, row in edited_left_arm.iterrows():
-        left_lines += "   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") + "\n"
+    right_lines = "\n".join("   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") for _, row in edited_right_arm.iterrows())
+    left_lines = "\n".join("   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") for _, row in edited_left_arm.iterrows())
 
     blank = "____________________________"
     long_blank = "____________________________________________________________"
@@ -167,7 +247,7 @@ def generate_summary():
         "3. Cart Position" + newline +
         "   Height (Vertical Column): " + (cart_height or blank) + newline +
         "   Position w.r.t Port" + newline +
-        (cart_position_wrt_port or (long_blank + newline) * 25) + newline +
+        "[Interactive grid used - diagram exported separately using camera icon]" + newline + newline +
         "4. Arm Position:" + newline +
         "   Camera: " + (arm_camera or blank) + newline +
         "   R1: " + (arm_r1 or blank) + newline +
@@ -186,10 +266,10 @@ def generate_summary():
         "System Settings" + newline +
         "Right Arm Instrument" + newline +
         "   Type                           Uses" + newline +
-        right_lines +
+        right_lines + newline +
         "Left Arm Instrument" + newline +
         "   Type                           Uses" + newline +
-        left_lines +
+        left_lines + newline +
 
         "Visualization & Energy" + newline +
         "Camera Name: " + (camera_name or blank) + newline +
@@ -201,17 +281,17 @@ def generate_summary():
 
         "Observations" + newline +
         "Port Placement" + newline +
-        (obs_port_placement or (long_blank + newline) * 6) +
+        (obs_port_placement or (long_blank + newline) * 6) + newline +
         "Cart Placement" + newline +
-        (obs_cart_placement or (long_blank + newline) * 6) +
+        (obs_cart_placement or (long_blank + newline) * 6) + newline +
         "Arm Collisions:" + newline +
-        (obs_arm_collisions or (long_blank + newline) * 6) +
+        (obs_arm_collisions or (long_blank + newline) * 6) + newline +
         "Camera Observation:" + newline +
-        (obs_camera or (long_blank + newline) * 6) +
+        (obs_camera or (long_blank + newline) * 6) + newline +
         "Insufflator: " + (insufflator or blank) + newline +
         "Smoke evacuator: " + (smoke_evacuator or blank) + newline +
         "System Observations:" + newline +
-        (system_observations or (long_blank + newline) * 10) +
+        (system_observations or (long_blank + newline) * 10) + newline +
         "Total Blood Loss: " + (total_blood_loss or blank) + newline + newline +
 
         "Surgeon Feedback" + newline +
@@ -236,3 +316,4 @@ st.download_button(
     mime="text/plain"
 )
 
+st.success("App is working! Use camera icon on canvas to export cart diagram as PNG and attach to printed summary.")
