@@ -53,17 +53,14 @@ patient_position = st.text_area("Patient Position (hidden)", height=120, key="pa
 st.subheader("3. Cart Position")
 cart_height = st.text_input("Height (Vertical Column)", key="cart_height")
 
-st.markdown("**Position w.r.t Port - Interactive Grid**")
-st.markdown("Drag ∪1, ∪2, ∪3 ports • Click inside CART to place points 1-2-3 • Export PNG with camera icon")
+st.markdown("**Position w.r.t Port**")
 
 CANVAS_SIZE = 700
-GRID_SPACING = 25
+GRID_SPACING = 10  # Fine grid
 
-# Adjustable CART size
-col_cart1, col_cart2 = st.columns(2)
-CART_WIDTH = col_cart1.slider("CART Width", 100, 500, 260, key="cart_w")
-CART_HEIGHT = col_cart2.slider("CART Height", 100, 400, 180, key="cart_h")
-
+# Fixed CART size (matching your PDF)
+CART_WIDTH = 260
+CART_HEIGHT = 180
 cart_x = (CANVAS_SIZE - CART_WIDTH) // 2
 cart_y = (CANVAS_SIZE - CART_HEIGHT) // 2
 
@@ -112,7 +109,7 @@ if st.button("Reset Grid"):
     st.session_state.canvas_key += 1
     st.rerun()
 
-# Canvas
+# Canvas with VERY SMALL dots
 canvas_result = st_canvas(
     background_image=generate_grid(),
     height=CANVAS_SIZE,
@@ -120,10 +117,11 @@ canvas_result = st_canvas(
     drawing_mode="transform" if mode == "Move Ports" else "point",
     initial_drawing=initial_drawing,
     update_streamlit=True,
+    point_display_radius=0.08,  # Minimized dot size
     key=f"canvas_{st.session_state.canvas_key}"
 )
 
-# Point placement
+# Point placement with small labels
 if canvas_result.json_data and mode == "Place Numbered Points":
     objects = canvas_result.json_data.get("objects", [])
     if objects and objects[-1]["type"] == "circle":
@@ -137,7 +135,7 @@ if canvas_result.json_data and mode == "Place Numbered Points":
                 "text": label,
                 "left": x,
                 "top": y,
-                "fontSize": 28,
+                "fontSize": 18,  # Smaller number text
                 "fill": "red",
                 "fontWeight": "bold"
             })
@@ -203,15 +201,6 @@ recommended_actions = st.text_area("Recommended Actions (hidden)", height=100, k
 
 # --- Generate Text Summary ---
 def generate_summary():
-    tel_parts = []
-    if telescope_0: tel_parts.append("0°")
-    if telescope_30: tel_parts.append("30°")
-    if telescope_custom.strip(): tel_parts.append(telescope_custom + "mm")
-    tel_line = "[x] " + "  [x] ".join(tel_parts) if tel_parts else "[ ] 0°  [ ] 30°  _____ mm"
-
-    right_lines = "\n".join("   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") for _, row in edited_right_arm.iterrows())
-    left_lines = "\n".join("   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") for _, row in edited_left_arm.iterrows())
-
     blank = "____________________________"
     long_blank = "____________________________________________________________"
     newline = "\n"
@@ -247,7 +236,7 @@ def generate_summary():
         "3. Cart Position" + newline +
         "   Height (Vertical Column): " + (cart_height or blank) + newline +
         "   Position w.r.t Port" + newline +
-        "[Interactive grid used - diagram exported separately using camera icon]" + newline + newline +
+        "[Diagram exported separately using camera icon]" + newline + newline +
         "4. Arm Position:" + newline +
         "   Camera: " + (arm_camera or blank) + newline +
         "   R1: " + (arm_r1 or blank) + newline +
@@ -266,14 +255,14 @@ def generate_summary():
         "System Settings" + newline +
         "Right Arm Instrument" + newline +
         "   Type                           Uses" + newline +
-        right_lines + newline +
+        "\n".join("   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") for _, row in edited_right_arm.iterrows()) + newline +
         "Left Arm Instrument" + newline +
         "   Type                           Uses" + newline +
-        left_lines + newline +
+        "\n".join("   " + (row["Type"] or "__________") + "     " + (row["Uses"] or "__________") for _, row in edited_left_arm.iterrows()) + newline +
 
         "Visualization & Energy" + newline +
         "Camera Name: " + (camera_name or blank) + newline +
-        "Telescope: " + tel_line + newline +
+        "Telescope: " + ("[x] " + "  [x] ".join([p for p in ["0°" if telescope_0 else "", "30°" if telescope_30 else "", telescope_custom + "mm" if telescope_custom.strip() else ""] if p]) if any([telescope_0, telescope_30, telescope_custom.strip()]) else "[ ] 0°  [ ] 30°  _____ mm") + newline +
         "ESU: Monopolar Cut     " + (esu_monopolar_cut or "_____") + " W" + newline +
         "     Monopolar Coag    " + (esu_monopolar_coag or "_____") + " W" + newline +
         "     Bipolar           " + (esu_bipolar or "_____") + " W" + newline +
@@ -310,10 +299,9 @@ if st.checkbox("Preview the printable summary"):
     st.text_area("Preview", generate_summary(), height=700, key="preview_area")
 
 st.download_button(
-    label="Download as Text File (Ready to Print)",
+    label="Download as Text File",
     data=generate_summary(),
     file_name="Meril_Clinical_Trial_Summary.txt",
     mime="text/plain"
 )
 
-st.success("App is working! Use camera icon on canvas to export cart diagram as PNG and attach to printed summary.")
